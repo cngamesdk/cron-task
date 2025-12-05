@@ -1,0 +1,11 @@
+#OS
+.DS_STORE
+
+#IDE
+/.idea
+
+#config
+/config/config.yaml
+
+#log
+/logs

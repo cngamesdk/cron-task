@@ -1,0 +1,21 @@
+common:
+  ctx_request_id_key: request_id
+mysql:
+  path: [your host]
+  port: "3306"
+  config: charset=utf8mb4&parseTime=True&loc=Local
+  db-name: [your dbname]
+  username: [your user]
+  password: [your password]
+  max-idle-conns: 10
+  max-open-conns: 100
+redis:
+  db: 0
+  addr: [your address]
+  password: [your password]
+log:
+  filename: [your filename]
+  max-size: 1024
+  max-backups: 30
+  max-age: 90
+  compress: true
