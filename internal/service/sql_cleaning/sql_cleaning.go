@@ -16,6 +16,8 @@ import (
 const (
 	startDateTimeKey = "StartDateTime"
 	endDateTimeKey   = "EndDateTime"
+	startDateKey     = "StartDate"
+	endDateKey       = "EndDate"
 )
 
 // NewSqlCleaningService 实例化服务
@@ -29,30 +31,76 @@ type SqlCleaningService struct {
 	service.BaseService
 }
 
-func (receiver *SqlCleaningService) PreEvent(ctx context.Context) (err error) {
+func (receiver *SqlCleaningService) presetVariableStartDateTime(req string) string {
 	findStartDateTime := "{{" + startDateTimeKey + "}}"
-	if strings.Index(receiver.Config.Content, findStartDateTime) >= 0 {
-		startDateTime, ok := receiver.Config.Config[startDateTimeKey]
-		startDateTimeStr := datetime.FormatTimeToStr(time.Now().Add(time.Hour*(-12)), "yyyy-mm-dd hh:mm:ss")
-		if ok {
-			startDateTimeStr = startDateTime.(string)
-		}
-		receiver.Config.Content = strings.ReplaceAll(receiver.Config.Content, findStartDateTime, startDateTimeStr)
+	startDateTime, ok := receiver.Config.Config[startDateTimeKey]
+	startDateTimeStr := datetime.FormatTimeToStr(time.Now().Add(time.Hour*(-12)), "yyyy-mm-dd hh:mm:ss")
+	if ok {
+		startDateTimeStr = startDateTime.(string)
 	}
+	req = strings.ReplaceAll(req, findStartDateTime, startDateTimeStr)
+	return req
+}
+
+func (receiver *SqlCleaningService) presetVariableEndDateTime(req string) string {
 	findEndDateTime := "{{" + endDateTimeKey + "}}"
-	if strings.Index(receiver.Config.Content, findEndDateTime) >= 0 {
+	if strings.Index(req, findEndDateTime) >= 0 {
 		endDateTime, ok := receiver.Config.Config[endDateTimeKey]
 		endDateTimeStr := datetime.FormatTimeToStr(time.Now(), "yyyy-mm-dd hh:mm:ss")
 		if ok {
 			endDateTimeStr = endDateTime.(string)
 		}
-		receiver.Config.Content = strings.ReplaceAll(receiver.Config.Content, findEndDateTime, endDateTimeStr)
+		req = strings.ReplaceAll(req, findEndDateTime, endDateTimeStr)
 	}
+	return req
+}
+
+func (receiver *SqlCleaningService) presetVariableStartDate(req string) string {
+	findStartDateTime := "{{" + startDateKey + "}}"
+	startDateTime, ok := receiver.Config.Config[startDateKey]
+	startDateTimeStr := datetime.FormatTimeToStr(time.Now().Add(time.Hour*(-12)), "yyyy-mm-dd")
+	if ok {
+		startDateTimeStr = startDateTime.(string)
+	}
+	req = strings.ReplaceAll(req, findStartDateTime, startDateTimeStr)
+	return req
+}
+
+func (receiver *SqlCleaningService) presetVariableEndDate(req string) string {
+	findEndDateTime := "{{" + endDateKey + "}}"
+	if strings.Index(req, findEndDateTime) >= 0 {
+		endDateTime, ok := receiver.Config.Config[endDateKey]
+		endDateTimeDeal, _ := datetime.FormatStrToTime(datetime.FormatTimeToStr(time.Now().Add(time.Hour*24), "yyyy-mm-dd"), "yyyy-mm-dd")
+		endDateTimeStr := datetime.FormatTimeToStr(endDateTimeDeal.Add(time.Second*-1), "yyyy-mm-dd hh:mm:ss")
+		if ok {
+			endDateTimeStr = endDateTime.(string)
+		}
+		req = strings.ReplaceAll(req, findEndDateTime, endDateTimeStr)
+	}
+	return req
+}
+
+func (receiver *SqlCleaningService) presetVariables() string {
+	var presetVariables []func(string2 string) string
+	presetVariables = append(presetVariables, receiver.presetVariableStartDateTime)
+	presetVariables = append(presetVariables, receiver.presetVariableEndDateTime)
+	presetVariables = append(presetVariables, receiver.presetVariableStartDate)
+	presetVariables = append(presetVariables, receiver.presetVariableEndDate)
+	content := receiver.Config.Content
+	for _, item := range presetVariables {
+		content = item(content)
+	}
+	return content
+}
+
+func (receiver *SqlCleaningService) PreEvent(ctx context.Context) (resp string, err error) {
+	resp = receiver.presetVariables()
 	return
 }
 
 func (receiver *SqlCleaningService) Run(ctx context.Context) (err error) {
 	startTime := time.Now()
+	var execSql string
 	defer func() {
 		endTime := time.Now()
 		if err != nil {
@@ -75,7 +123,7 @@ func (receiver *SqlCleaningService) Run(ctx context.Context) (err error) {
 		if err != nil {
 			logModel.Status = sql.StatusFail
 		}
-		logModel.Result = receiver.Config.Content
+		logModel.Result = execSql
 		receiver.BaseService.TaskLog = logModel
 		if completeErr := receiver.CompleteEvent(ctx); completeErr != nil {
 			err = completeErr
@@ -83,11 +131,13 @@ func (receiver *SqlCleaningService) Run(ctx context.Context) (err error) {
 		}
 	}()
 
-	if err = receiver.PreEvent(ctx); err != nil {
+	preEventResult, preEventErr := receiver.PreEvent(ctx)
+	if preEventErr != nil {
 		global.Logger.ErrorCtx(ctx, "前置事件异常", zap.Error(err))
 		return
 	}
-	err = global.MyDb.WithContext(ctx).Exec(receiver.Config.Content).Error
+	execSql = preEventResult
+	err = global.MyDb.WithContext(ctx).Exec(execSql).Error
 	return
 }
 

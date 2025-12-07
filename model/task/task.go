@@ -5,7 +5,7 @@ import (
 )
 
 type TaskInterface interface {
-	PreEvent(ctx context.Context) (err error)
+	PreEvent(ctx context.Context) (resp string, err error)
 	Run(ctx context.Context) (err error)
 	SuccessEvent(ctx context.Context) (err error)
 	FailEvent(ctx context.Context) (err error)
