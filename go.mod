@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.10
 
 require (
-	github.com/cngamesdk/go-core v1.0.9-0.20251202114258-c0785164a4a1
+	github.com/cngamesdk/go-core v1.0.9-0.20251216084014-8a692c0f02c7
 	github.com/duke-git/lancet/v2 v2.3.8
 	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/v9 v9.16.0
