@@ -14,6 +14,10 @@ func Migrate() (err error) {
 			log.DwdRootGameRegLogModel{},
 			log.DwdRootGameBackRegLogModel{},
 
+			log.DwdDayGameRegUidLoginLogModel{},
+			log.DwdDayRootGameRegUidLoginLogModel{},
+			log.DwdDayRootGameReg30BackUidLoginLogModel{},
+
 			cron_task.DimCronTaskConfigModel{},
 			cron_task.OdsCronTaskLogModel{},
 		); migrateErr != nil {
