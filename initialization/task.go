@@ -2,68 +2,92 @@ package initialization
 
 import (
 	"cngamesdk.com/cron-task/global"
-	sql_cleaning2 "cngamesdk.com/cron-task/internal/logic/sql_cleaning"
 	"cngamesdk.com/cron-task/model/sql/cron_task"
+	"cngamesdk.com/cron-task/model/task"
+	"context"
 	"github.com/cngamesdk/go-core/model/sql"
-	cron_task2 "github.com/cngamesdk/go-core/model/sql/cron_task"
-	"github.com/pkg/errors"
+	"github.com/duke-git/lancet/v2/random"
 	"github.com/robfig/cron/v3"
 	"github.com/spf13/cast"
 	"go.uber.org/zap"
+	"time"
+)
+
+var (
+	tasksQueue = make(map[int64]int64)
 )
 
 // InitTasks 获取所有任务列表
-func InitTasks(myCron *cron.Cron) (err error) {
-	model := cron_task.NewDimCronTaskConfigModel()
-	tmpDb := model.Db().Table(model.TableName()).Select("*").Where("status = ?", sql.StatusNormal)
-	var count int64
-	if countErr := tmpDb.Count(&count).Error; countErr != nil {
-		err = countErr
-		return
-	}
-	if count <= 0 {
-		err = errors.New("未找到任务列表")
-		return
-	}
-	page := 1
-	pageSize := 50
-	totalPage := cast.ToInt(count) / pageSize
-	if cast.ToInt(count)%pageSize != 0 {
-		totalPage++
-	}
-	for page <= totalPage {
-		var list []cron_task.DimCronTaskConfigModel
-		if listErr := model.Db().
-			Table(model.TableName()).
-			Select("*").
-			Where("status = ?", sql.StatusNormal).
-			Limit(pageSize).
-			Offset((page - 1) * pageSize).
-			Order("id DESC").Find(&list).Error; listErr != nil {
-			err = listErr
-			return
+func InitTasks(myCron *cron.Cron) {
+
+	for {
+
+		time.Sleep(time.Second * 10)
+
+		model := cron_task.NewDimCronTaskConfigModel()
+		tmpDb := model.Db().Table(model.TableName()).Select("*").Where("status = ?", sql.StatusNormal)
+		var count int64
+		if countErr := tmpDb.Count(&count).Error; countErr != nil {
+			global.Logger.Error("获取总数异常", zap.Error(countErr))
+			continue
 		}
-		for _, item := range list {
-			var entryId cron.EntryID
-			var addFunErr error
-			if item.Config == nil {
-				item.Config = make(sql.CustomMapType)
-			}
-			switch item.TaskType {
-			case cron_task2.TaskTypeSqlCleaning: // SQL清洗任务
-				entryId, addFunErr = sql_cleaning2.AddFunc(myCron, &item)
-				break
-			default:
-				err = errors.New("未知任务类型" + item.TaskType)
-				return
-			}
-			if addFunErr != nil {
-				err = addFunErr
-				return
-			}
-			global.Logger.Info("任务开始执行", zap.Any("任务ID", entryId))
+		if count <= 0 {
+			global.Logger.Info("未获取到任务")
+			continue
 		}
-		page++
+		page := 1
+		pageSize := 50
+		totalPage := cast.ToInt(count) / pageSize
+		if cast.ToInt(count)%pageSize != 0 {
+			totalPage += 1
+		}
+		for page <= totalPage {
+			var list []cron_task.DimCronTaskConfigModel
+			if listErr := model.Db().
+				Table(model.TableName()).
+				Select("*").
+				Where("status = ?", sql.StatusNormal).
+				Limit(pageSize).
+				Offset((page - 1) * pageSize).
+				Order("id DESC").Find(&list).Error; listErr != nil {
+				global.Logger.Error("获取列表异常", zap.Error(listErr))
+				continue
+			}
+			for _, item := range list {
+
+				if _, ok := tasksQueue[item.Id]; ok {
+					continue
+				}
+				//新增
+				tasksQueue[item.Id] = item.Id
+
+				if item.Config == nil {
+					item.Config = make(sql.CustomMapType)
+				}
+				adapter := task.GetTaskFactory(item.TaskType)
+				if adapter == nil {
+					global.Logger.Warn("未知任务类型", zap.Any("data", item))
+					continue
+				}
+				adapter.Init(&item)
+
+				entryId, addFunErr := myCron.AddFunc(item.Spec, func() {
+					requestId, _ := random.UUIdV4()
+					ctx := context.WithValue(context.Background(), global.Config.Common.CtxRequestIdKey, requestId)
+					global.Logger.InfoCtx(ctx, "开始执行任务")
+					if runErr := adapter.Run(ctx); runErr != nil {
+						global.Logger.Error("执行任务异常", zap.Any("err", runErr))
+					}
+					global.Logger.InfoCtx(ctx, "结束执行任务")
+				})
+
+				if addFunErr != nil {
+					global.Logger.Warn("加入定时异常", zap.Any("err", addFunErr))
+					continue
+				}
+				global.Logger.Info("任务开启", zap.Any("实例ID", entryId), zap.Any("任务ID", item.Id))
+			}
+			page++
+		}
 	}
-	return
 }
