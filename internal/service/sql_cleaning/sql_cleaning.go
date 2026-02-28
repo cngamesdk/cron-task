@@ -20,13 +20,6 @@ const (
 	endDateKey       = "EndDate"
 )
 
-// NewSqlCleaningService 实例化服务
-func NewSqlCleaningService(req *cron_task.DimCronTaskConfigModel) *SqlCleaningService {
-	myService := &SqlCleaningService{}
-	myService.Config = req
-	return myService
-}
-
 type SqlCleaningService struct {
 	service.BaseService
 }
@@ -93,12 +86,23 @@ func (receiver *SqlCleaningService) presetVariables() string {
 	return content
 }
 
+// 初始化
+func (receiver *SqlCleaningService) Init(req *cron_task.DimCronTaskConfigModel) {
+	receiver.Config = req
+	return
+}
+
 func (receiver *SqlCleaningService) PreEvent(ctx context.Context) (resp string, err error) {
 	resp = receiver.presetVariables()
 	return
 }
 
 func (receiver *SqlCleaningService) Run(ctx context.Context) (err error) {
+	if baseRunErr := receiver.BaseService.Run(ctx); baseRunErr != nil {
+		err = baseRunErr
+		global.Logger.ErrorCtx(ctx, "执行基础异常", zap.Error(baseRunErr))
+		return
+	}
 	startTime := time.Now()
 	var execSql string
 	defer func() {
